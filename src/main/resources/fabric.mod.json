@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "ironman-profit-tracker",
+  "version": "${version}",
+  "name": "Ironman Profit Tracker",
+  "description": "Tracks Hypixel SkyBlock MMM profit from sack loot using NPC sell prices, with compaction, crafting, stash and source-switch protection.",
+  "authors": [
+    "Daeelldian"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/ironman-profit-tracker/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "ironmanprofittracker.daeelldian.client.IronmanProfitTrackerClient"
+    ],
+    "modmenu": [
+      "ironmanprofittracker.daeelldian.client.ModMenuIntegration"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.1.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "modmenu": ">=18.0.0"
+  }
+}

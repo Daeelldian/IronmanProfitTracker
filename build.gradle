@@ -1,0 +1,86 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    maven {
+        name = "Terraformers"
+        url = "https://maven.terraformersmc.com/"
+    }
+}
+
+loom {
+    splitEnvironmentSourceSets()
+
+    mods {
+        "ironman-profit-tracker" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // Optional at runtime; only needed to expose IPT's config screen through Mod Menu.
+    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+
+    // Critical arithmetic helpers are pure Java. Keep the JUnit runtime explicit because
+    // Gradle 9.5 no longer supplies the JUnit Platform launcher implicitly.
+    testImplementation "org.junit.jupiter:junit-jupiter-api:5.13.4"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.13.4"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.13.4"
+}
+
+def expandedModVersion = version.toString()
+
+processResources {
+    inputs.property "version", expandedModVersion
+
+    filesMatching("fabric.mod.json") {
+        expand "version": expandedModVersion
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+def licenseProjectName = rootProject.name
+
+jar {
+    inputs.property "projectName", licenseProjectName
+
+    from("LICENSE") {
+        rename { "${it}_${licenseProjectName}" }
+    }
+}
+
+publishing {
+    publications {
+        create("mavenJava", MavenPublication) {
+            from components.java
+        }
+    }
+}
