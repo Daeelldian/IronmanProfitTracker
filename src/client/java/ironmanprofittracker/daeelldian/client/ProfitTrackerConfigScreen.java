@@ -117,8 +117,9 @@ public final class ProfitTrackerConfigScreen extends Screen {
                 line = previewLine(graphics, line, ProfitTrackerState.formatCoins(state.getHighestProfit()), "best session");
             }
             if (config.showHighestProfitPerHour) {
-                previewLine(graphics, line, ProfitTrackerState.formatCoins(state.getHighestProfitPerHour()) + "/h", "best rate");
+                line = previewLine(graphics, line, ProfitTrackerState.formatCoins(state.getHighestProfitPerHour()) + "/h", "best rate");
             }
+            ProfitTrackerHud.renderPreviewMaterials(graphics, minecraft, source, line * 10 + 1);
         } finally {
             graphics.pose().popMatrix();
         }

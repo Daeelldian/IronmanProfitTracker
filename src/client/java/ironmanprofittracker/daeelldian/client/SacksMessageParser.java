@@ -69,6 +69,7 @@ public final class SacksMessageParser {
         try {
             Set<String> uniqueHoverTexts = collectHoverTexts(message);
             Map<ProfitSource, LinkedHashMap<String, ParsedSacksEvent.RewardLine>> parsedBySource = new EnumMap<>(ProfitSource.class);
+            LinkedHashMap<String, ParsedSacksEvent.RewardLine> parsedMiningBonuses = new LinkedHashMap<>();
 
             for (String hoverText : uniqueHoverTexts) {
                 for (ProfitSource source : ProfitSource.values()) {
@@ -82,13 +83,31 @@ public final class SacksMessageParser {
                         String key = parsed.itemName().toLowerCase(Locale.ROOT) + "|" + parsed.amount() + "|" + parsed.npcSellPrice();
                         ParsedSacksEvent.RewardLine previous = sourceLines.putIfAbsent(
                                 key,
-                                new ParsedSacksEvent.RewardLine(parsed.itemName(), parsed.amount(), parsed.npcSellPrice())
+                                new ParsedSacksEvent.RewardLine(
+                                        parsed.itemName(),
+                                        parsed.amount(),
+                                        parsed.npcSellPrice(),
+                                        parsed.materialFamily(),
+                                        parsed.baseUnitsPerItem()
+                                )
                         );
                         if (previous != null) {
                             ProfitTrackerDebug.trace(
                                     "Suppressed duplicate semantic reward: " + parsed.itemName() + " x" + parsed.amount()
                             );
                         }
+                    }
+                }
+
+                for (ParsedSacksEvent.RewardLine bonusLine : MiningBonus.parseRewards(hoverText)) {
+                    String key = bonusLine.itemName().toLowerCase(Locale.ROOT) + "|"
+                            + bonusLine.amount() + "|" + bonusLine.npcSellPrice();
+                    ParsedSacksEvent.RewardLine previous = parsedMiningBonuses.putIfAbsent(key, bonusLine);
+                    if (previous != null) {
+                        ProfitTrackerDebug.trace(
+                                "Suppressed duplicate mining bonus reward: "
+                                        + bonusLine.itemName() + " x" + bonusLine.amount()
+                        );
                     }
                 }
             }
@@ -107,6 +126,10 @@ public final class SacksMessageParser {
                 rewards.put(entry.getKey(), new ParsedSacksEvent.SourceReward(count, profit, List.copyOf(entry.getValue().values())));
             }
 
+            for (ParsedSacksEvent.RewardLine bonusLine : parsedMiningBonuses.values()) {
+                totalParsedItems = ProfitTrackerMath.saturatingAdd(totalParsedItems, bonusLine.amount());
+            }
+
             if (reportedItemCount > 0 && totalParsedItems > reportedItemCount) {
                 ProfitTrackerDebug.error(
                         "sack reward sanity check",
@@ -114,6 +137,7 @@ public final class SacksMessageParser {
                                 + " sack event; entire tracked reward ignored"
                 );
                 rewards.clear();
+                parsedMiningBonuses.clear();
             }
 
             ProfitTrackerDebug.trace(
@@ -123,7 +147,14 @@ public final class SacksMessageParser {
                             + " hoverPayloads=" + uniqueHoverTexts.size()
                             + " parsedTrackedItems=" + totalParsedItems
             );
-            state.onSacksEvent(new ParsedSacksEvent(nowMs, true, reportedItemCount, accountingWindowMs, rewards));
+            state.onSacksEvent(new ParsedSacksEvent(
+                    nowMs,
+                    true,
+                    reportedItemCount,
+                    accountingWindowMs,
+                    rewards,
+                    List.copyOf(parsedMiningBonuses.values())
+            ));
         } catch (RuntimeException exception) {
             ProfitTrackerDebug.error("sack/event parsing", exception);
         }

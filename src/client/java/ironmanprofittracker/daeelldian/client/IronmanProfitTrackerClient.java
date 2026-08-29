@@ -18,6 +18,7 @@ public final class IronmanProfitTrackerClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        HypixelLocationTracker.initialize();
         ProfitTrackerCommands.register();
 
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
@@ -32,11 +33,13 @@ public final class IronmanProfitTrackerClient implements ClientModInitializer {
         });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            HypixelLocationTracker.onConnectionBoundary();
             ProfitTrackerDebug.info("Server disconnect detected.");
             STATE.endSessionFromServerChange(ProfitTrackerClock.nowMs());
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            HypixelLocationTracker.onConnectionBoundary();
             STATE.onServerJoin(ProfitTrackerClock.nowMs());
             ProfitTrackerDebug.info("Server join detected; session boundary processed.");
         });

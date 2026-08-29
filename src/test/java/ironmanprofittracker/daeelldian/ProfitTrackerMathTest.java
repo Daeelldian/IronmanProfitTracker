@@ -48,6 +48,24 @@ final class ProfitTrackerMathTest {
         assertEquals(2_000_000.0, ProfitTrackerMath.profitPerHour(1_000_000L, activeDuration), 0.0001);
     }
 
+
+    @Test
+    void materialBreakdownNormalizesToLargestCompactedTiers() {
+        // 2,000 Enchanted Diamonds = 320,000 raw-equivalent Diamonds.
+        long[] diamond = ProfitTrackerMath.compactTierCounts(2_000L * 160L, 25_600L, 160L, 1L);
+        assertEquals(12L, diamond[0]);
+        assertEquals(80L, diamond[1]);
+        assertEquals(0L, diamond[2]);
+
+        // Gemstone families must be compacted independently. Combining these two families first
+        // would incorrectly create one Fine Gemstone.
+        long[] familyA = ProfitTrackerMath.compactTierCounts(6_399L, 6_400L, 80L, 1L);
+        long[] familyB = ProfitTrackerMath.compactTierCounts(1L, 6_400L, 80L, 1L);
+        assertEquals(0L, familyA[0] + familyB[0]);
+        assertEquals(79L, familyA[1] + familyB[1]);
+        assertEquals(80L, familyA[2] + familyB[2]);
+    }
+
     @Test
     void saturatingCountersNeverWrap() {
         assertEquals(Long.MAX_VALUE, ProfitTrackerMath.saturatingAdd(Long.MAX_VALUE - 5L, 10L));

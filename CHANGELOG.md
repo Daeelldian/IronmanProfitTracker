@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.4.1 - v31
+
+### Conditional Mining Fiesta HUD counters
+- Track Refined Mineral and Glossy Gemstone quantities alongside their profit contribution during an active mining session.
+- Append a Refined Mineral icon/count only after Refined Mineral has actually been detected in the current session.
+- Append a Glossy Gemstone icon/count only after Glossy Gemstone has actually been detected in the current Gemstone Mining session.
+- Do not reserve HUD space for zero-value Fiesta counters, keeping normal non-Fiesta mining sessions compact.
+- Preserve detected bonus counters for the remainder of the current session so the HUD remains a useful session summary after the drop occurs.
+- Candidate sessions carry their detected Fiesta bonus counts into the confirmed session, so bonuses from the first qualifying sack batch are not lost visually.
+
+## 0.4.0 - v30
+
+### Gold/Diana Hub contamination guard
+- Use Hypixel's official Mod API location event to identify SkyBlock Hub instances.
+- Reject and clear Gold Mining candidates while on the Hub, preventing Diana/Mythological-event Gold drops from starting a Gold Mining session.
+- Hold a Gold candidate briefly while location is not yet known instead of guessing, then allow normal Gold tracking on non-Hub mining islands.
+
+### Mining Fiesta profit
+- Count Refined Mineral at its current 100,000-coin NPC sell price for identified/active mining sessions.
+- Count Glossy Gemstone at its current 200,000-coin NPC sell price for Gemstone Mining.
+- Keep generic Refined Mineral from starting an MMM by itself because the drop does not identify which mining method produced it.
+- Mining-Fiesta bonus drops participate in craft/stash correlation and sack item-count sanity checks.
+
+### Normalized mined-material HUD
+- Add a mining-only material row below the configured stat rows.
+- Convert all received material forms to raw-equivalent units and display the largest compacted equivalent, regardless of whether the player actually used a Personal Compactor.
+- Example: 2,000 Enchanted Diamonds display as 12 Enchanted Diamond Blocks, 80 Enchanted Diamonds, and 0 Diamonds.
+- Normalize each gemstone color independently before aggregating tier counts so IPT never combines different gemstone colors into impossible compacted items.
+- Add regression coverage for Diamond compaction and gemstone family separation.
+
+### Dependency
+- Add Hypixel Mod API 1.0.2 as a required client dependency for authoritative instance/location detection.
+
 ## 0.3.6 - v29
 
 ### Sack-sampled profit/hour

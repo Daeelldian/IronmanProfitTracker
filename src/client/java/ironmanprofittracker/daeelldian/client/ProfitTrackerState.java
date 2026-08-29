@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
@@ -35,6 +36,8 @@ public final class ProfitTrackerState {
     private boolean sessionPaused;
     private long pausedAtMs;
     private final List<PauseInterval> pauseIntervals = new ArrayList<>();
+    private final Map<String, Long> materialBaseUnits = new LinkedHashMap<>();
+    private final EnumMap<MiningBonus, Long> miningBonusCounts = new EnumMap<>(MiningBonus.class);
 
     private Candidate candidate;
     private boolean connectionReadyForPendingChat;
@@ -69,6 +72,8 @@ public final class ProfitTrackerState {
         sessionPaused = false;
         pausedAtMs = 0L;
         pauseIntervals.clear();
+        materialBaseUnits.clear();
+        miningBonusCounts.clear();
         candidate = null;
         correlationTracker.reset();
         if (clearPendingMessages) pendingChatMessages.clear();
@@ -91,7 +96,7 @@ public final class ProfitTrackerState {
         }
 
         ParsedSacksEvent effectiveEvent = resolved.event();
-        if (effectiveEvent.rewards().isEmpty()) {
+        if (effectiveEvent.rewards().isEmpty() && effectiveEvent.miningBonusLines().isEmpty()) {
             ProfitTrackerDebug.trace("Sacks addition contained no eligible configured reward after correlation.");
             return;
         }
@@ -125,6 +130,15 @@ public final class ProfitTrackerState {
                         .append(" @").append(line.npcSellPrice()).append(']');
             }
         }
+        for (ParsedSacksEvent.RewardLine line : event.miningBonusLines()) {
+            parsedItems = ProfitTrackerMath.saturatingAdd(parsedItems, line.amount());
+            parsedProfit = ProfitTrackerMath.saturatingAdd(parsedProfit, line.profit());
+            if (!details.isEmpty()) details.append("; ");
+            details.append("Mining bonus ").append(line.itemName())
+                    .append(" x").append(line.amount())
+                    .append(" @").append(line.npcSellPrice());
+        }
+
         ProfitTrackerDebug.trace(
                 "Sacks summary: reportedItems=" + event.reportedItemCount()
                         + " accountingWindowMs=" + event.accountingWindowMs()
@@ -143,6 +157,21 @@ public final class ProfitTrackerState {
             if (recovered <= 0L) continue;
             recoveredBySource.put(entry.getKey(), recovered);
         }
+
+        // Generic Refined Mineral cannot identify its original mining method after the fact. If a
+        // mining session is active, attribute eligible stash bonuses to that known source. Glossy
+        // Gemstone is source-specific and can safely fall back to Gemstone Mining.
+        for (ParsedSacksEvent.RewardLine bonusLine : event.miningBonusLines()) {
+            MiningBonus bonus = MiningBonus.fromItemName(bonusLine.itemName());
+            if (bonus == null) continue;
+            ProfitSource target = null;
+            if (sessionActive && source != null && bonus.appliesTo(source)) target = source;
+            else if (bonus.getSpecificSource() != null) target = bonus.getSpecificSource();
+            if (target != null) {
+                recoveredBySource.merge(target, bonusLine.profit(), ProfitTrackerMath::saturatingAdd);
+            }
+        }
+
         records.addRecoveredProfits(recoveredBySource);
         recoveredBySource.forEach(this::sendStashMessage);
     }
@@ -150,7 +179,10 @@ public final class ProfitTrackerState {
     private void handleNormal(ParsedSacksEvent event) {
         if (sessionActive) {
             ParsedSacksEvent.SourceReward current = event.rewards().get(source);
-            if (current != null && current.profit() > 0) creditCurrent(current, event);
+            long currentBonusProfit = event.miningBonusProfitFor(source);
+            if ((current != null && current.profit() > 0L) || currentBonusProfit > 0L) {
+                creditCurrent(current, currentBonusProfit, event);
+            }
 
             // One sack notification can contain several tracked sources. Consider only the strongest
             // competing source so candidate selection is deterministic rather than enum-order dependent.
@@ -163,7 +195,11 @@ public final class ProfitTrackerState {
                     bestCompetingReward = entry.getValue();
                 }
             }
-            if (bestCompetitor != null) considerSwitch(bestCompetitor, bestCompetingReward, event);
+            if (bestCompetitor != null) {
+                // Mining bonuses stay with the already-known active mining source. They are not used
+                // to force or accelerate a source switch from an otherwise ambiguous mixed batch.
+                considerSwitch(bestCompetitor, bestCompetingReward, 0L, event);
+            }
             return;
         }
 
@@ -175,53 +211,114 @@ public final class ProfitTrackerState {
                 bestReward = entry.getValue();
             }
         }
-        if (best != null) considerStart(best, bestReward, event);
+        if (best != null) {
+            considerStart(best, bestReward, event.miningBonusProfitFor(best), event);
+        }
     }
 
-    private void creditCurrent(ParsedSacksEvent.SourceReward reward, ParsedSacksEvent event) {
+    private void creditCurrent(
+            ParsedSacksEvent.SourceReward reward,
+            long miningBonusProfit,
+            ParsedSacksEvent event
+    ) {
         long nowMs = event.timestampMs();
         resumeIfPaused(event.activityStartMs(), nowMs);
-        profit = ProfitTrackerMath.saturatingAdd(profit, reward.profit());
+        long baseProfit = reward == null ? 0L : reward.profit();
+        long creditedProfit = ProfitTrackerMath.saturatingAdd(baseProfit, Math.max(0L, miningBonusProfit));
+        profit = ProfitTrackerMath.saturatingAdd(profit, creditedProfit);
+        if (reward != null) source.accumulateMaterials(materialBaseUnits, reward);
+        accumulateMiningBonuses(miningBonusCounts, event, source);
         lastActivityAtMs = nowMs;
         liveProfitPerHour = rateAt(lastActivityAtMs);
         ProfitTrackerDebug.trace(
-                "Credited " + source.getDisplayName() + " +" + reward.profit()
-                        + " coins; sampledRate=" + liveProfitPerHour
+                "Credited " + source.getDisplayName() + " +" + creditedProfit
+                        + " coins (base=" + baseProfit + ", miningBonus=" + miningBonusProfit + ")"
+                        + "; sampledRate=" + liveProfitPerHour
         );
     }
 
-    private void considerStart(ProfitSource candidateSource, ParsedSacksEvent.SourceReward reward, ParsedSacksEvent event) {
-        if (reward.profit() <= 0) return;
-        updateCandidate(candidateSource, reward, event);
+    private void considerStart(
+            ProfitSource candidateSource,
+            ParsedSacksEvent.SourceReward reward,
+            long miningBonusProfit,
+            ParsedSacksEvent event
+    ) {
+        if (reward == null || reward.profit() <= 0L) return;
+        if (rejectGoldHubCandidate(candidateSource)) return;
+        updateCandidate(candidateSource, reward, miningBonusProfit, event);
         ProfitTrackerDebug.trace(
                 "Start candidate " + candidateSource.getDisplayName() + ": "
                         + candidate.profit + " coins / " + candidate.events + " events."
         );
+        if (waitForGoldLocation(candidateSource)) return;
         if (confirmed(candidate)) startSessionFromCandidate();
     }
 
-    private void considerSwitch(ProfitSource candidateSource, ParsedSacksEvent.SourceReward reward, ParsedSacksEvent event) {
-        if (reward.profit() <= 0) return;
-        updateCandidate(candidateSource, reward, event);
+    private void considerSwitch(
+            ProfitSource candidateSource,
+            ParsedSacksEvent.SourceReward reward,
+            long miningBonusProfit,
+            ParsedSacksEvent event
+    ) {
+        if (reward == null || reward.profit() <= 0L) return;
+        if (rejectGoldHubCandidate(candidateSource)) return;
+        updateCandidate(candidateSource, reward, miningBonusProfit, event);
         ProfitTrackerDebug.trace(
                 "Switch candidate " + candidateSource.getDisplayName() + ": "
                         + candidate.profit + " coins / " + candidate.events + " events."
         );
+        if (waitForGoldLocation(candidateSource)) return;
         if (confirmed(candidate)) switchToCandidate();
     }
 
-    private void updateCandidate(ProfitSource candidateSource, ParsedSacksEvent.SourceReward reward, ParsedSacksEvent event) {
+    private boolean rejectGoldHubCandidate(ProfitSource candidateSource) {
+        if (candidateSource != ProfitSource.GOLD_MINING || !HypixelLocationTracker.isSkyBlockHub()) return false;
+        if (candidate != null && candidate.source == ProfitSource.GOLD_MINING) candidate = null;
+        ProfitTrackerDebug.info("Ignored Gold Mining candidate on the SkyBlock Hub (event/drop contamination guard).");
+        return true;
+    }
+
+    private boolean waitForGoldLocation(ProfitSource candidateSource) {
+        if (candidateSource != ProfitSource.GOLD_MINING || HypixelLocationTracker.isLocationKnown()) return false;
+        ProfitTrackerDebug.trace("Holding Gold Mining candidate until Hypixel location is known.");
+        return true;
+    }
+
+    private void updateCandidate(
+            ProfitSource candidateSource,
+            ParsedSacksEvent.SourceReward reward,
+            long miningBonusProfit,
+            ParsedSacksEvent event
+    ) {
         long observedAtMs = event.timestampMs();
         long activityStartMs = event.activityStartMs();
+        long eventProfit = ProfitTrackerMath.saturatingAdd(reward.profit(), Math.max(0L, miningBonusProfit));
         if (candidate == null
                 || candidate.source != candidateSource
                 || observedAtMs - candidate.firstObservedAtMs > CANDIDATE_WINDOW_MS) {
-            candidate = new Candidate(candidateSource, activityStartMs, observedAtMs, reward.profit(), 1);
+            candidate = new Candidate(candidateSource, activityStartMs, observedAtMs, eventProfit, 1);
+            candidateSource.accumulateMaterials(candidate.materialBaseUnits, reward);
+            accumulateMiningBonuses(candidate.miningBonusCounts, event, candidateSource);
             return;
         }
-        candidate.profit = ProfitTrackerMath.saturatingAdd(candidate.profit, reward.profit());
+        candidate.profit = ProfitTrackerMath.saturatingAdd(candidate.profit, eventProfit);
         candidate.events++;
         candidate.lastObservedAtMs = observedAtMs;
+        candidateSource.accumulateMaterials(candidate.materialBaseUnits, reward);
+        accumulateMiningBonuses(candidate.miningBonusCounts, event, candidateSource);
+    }
+
+    private static void accumulateMiningBonuses(
+            EnumMap<MiningBonus, Long> target,
+            ParsedSacksEvent event,
+            ProfitSource targetSource
+    ) {
+        if (target == null || event == null || targetSource == null || !targetSource.isMining()) return;
+        for (ParsedSacksEvent.RewardLine line : event.miningBonusLines()) {
+            MiningBonus bonus = MiningBonus.fromItemName(line.itemName());
+            if (bonus == null || !bonus.appliesTo(targetSource) || line.amount() <= 0L) continue;
+            target.merge(bonus, line.amount(), ProfitTrackerMath::saturatingAdd);
+        }
     }
 
     private static boolean confirmed(Candidate candidate) {
@@ -267,6 +364,10 @@ public final class ProfitTrackerState {
         sessionPaused = false;
         pausedAtMs = 0L;
         pauseIntervals.clear();
+        materialBaseUnits.clear();
+        materialBaseUnits.putAll(confirmed.materialBaseUnits);
+        miningBonusCounts.clear();
+        miningBonusCounts.putAll(confirmed.miningBonusCounts);
         liveProfitPerHour = rateAt(lastActivityAtMs);
     }
 
@@ -475,6 +576,26 @@ public final class ProfitTrackerState {
         return sessionActive && sessionPaused;
     }
 
+    public List<ProfitSource.MaterialDisplayEntry> getMaterialBreakdown() {
+        if (!sessionActive || source == null) return List.of();
+
+        List<ProfitSource.MaterialDisplayEntry> primary = source.normalizeMaterials(materialBaseUnits);
+        if (!source.isMining() || miningBonusCounts.isEmpty()) return primary;
+
+        List<ProfitSource.MaterialDisplayEntry> combined = new ArrayList<>(primary.size() + miningBonusCounts.size());
+        combined.addAll(primary);
+        for (MiningBonus bonus : MiningBonus.values()) {
+            long count = miningBonusCounts.getOrDefault(bonus, 0L);
+            if (count <= 0L || !bonus.appliesTo(source)) continue;
+            combined.add(new ProfitSource.MaterialDisplayEntry(
+                    bonus.getDisplayName(),
+                    bonus.getIconStack(),
+                    count
+            ));
+        }
+        return List.copyOf(combined);
+    }
+
     public ProfitTrackerRecords getRecords() {
         return records;
     }
@@ -500,6 +621,8 @@ public final class ProfitTrackerState {
         private long lastObservedAtMs;
         private long profit;
         private int events;
+        private final Map<String, Long> materialBaseUnits = new LinkedHashMap<>();
+        private final EnumMap<MiningBonus, Long> miningBonusCounts = new EnumMap<>(MiningBonus.class);
 
         private Candidate(
                 ProfitSource source,

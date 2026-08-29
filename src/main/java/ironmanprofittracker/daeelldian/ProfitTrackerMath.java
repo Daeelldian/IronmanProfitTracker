@@ -32,6 +32,24 @@ public final class ProfitTrackerMath {
         return Double.isFinite(rate) && rate >= 0.0 ? rate : 0.0;
     }
 
+
+    /**
+     * Converts base-equivalent material units into a largest-tier-first breakdown.
+     * Tier sizes must be supplied from largest to smallest. A non-positive tier size is
+     * treated as one so malformed metadata cannot divide by zero.
+     */
+    public static long[] compactTierCounts(long baseUnits, long... tierSizes) {
+        if (tierSizes == null || tierSizes.length == 0) return new long[0];
+        long[] counts = new long[tierSizes.length];
+        long remaining = Math.max(0L, baseUnits);
+        for (int i = 0; i < tierSizes.length; i++) {
+            long size = Math.max(1L, tierSizes[i]);
+            counts[i] = remaining / size;
+            remaining %= size;
+        }
+        return counts;
+    }
+
     /** Adds non-negative counters without ever wrapping into a negative value. */
     public static long saturatingAdd(long left, long right) {
         if (left <= 0L) return Math.max(0L, right);

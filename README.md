@@ -16,7 +16,7 @@ Ironman Profit Tracker is a client-only Fabric mod for Minecraft 26.1.2 / Hypixe
 
 Each source defines the sellable reward forms that can actually appear in sacks, including compacted forms. Gemstone tracking currently covers NPC-sellable rough, flawed and fine gemstones.
 
-## 0.3 architecture
+## Runtime architecture
 
 The runtime pipeline is deliberately small and event-driven:
 
@@ -28,7 +28,7 @@ Fabric GAME message
     -> persistent records / HUD
 ```
 
-`ProfitSource` owns source definitions and NPC prices. `SacksMessageParser` only turns Hypixel messages and hover text into structured rewards. `RewardCorrelationTracker` removes known non-MMM causes such as matching Supercraft output and marks explicit stash-to-sacks transfers. `ProfitTrackerState` owns session/candidate behavior. Rendering and persistence are separate from parsing and accounting.
+`ProfitSource` owns source definitions, NPC prices, and mined-material compaction metadata. `SacksMessageParser` only turns Hypixel messages and hover text into structured rewards. `RewardCorrelationTracker` removes known non-MMM causes such as matching Supercraft output and marks explicit stash-to-sacks transfers. `ProfitTrackerState` owns session/candidate behavior. `HypixelLocationTracker` uses the official Hypixel Mod API location event for island-specific guards such as suppressing false Gold Mining candidates on the SkyBlock Hub. Rendering and persistence are separate from parsing and accounting.
 
 ## Profit accounting and compaction
 
@@ -41,6 +41,8 @@ For Diamond Mining, for example:
 - Enchanted Diamond Block: 204,800 coins
 
 The parser deduplicates repeated semantic hover payloads and repeated parsed reward lines. It also rejects a sack parse if the total number of tracked reward items exceeds the `[Sacks] +X items` headline. This is specifically designed to prevent duplicate component/hover traversal from multiplying profit.
+
+Mining Fiesta bonus drops are also NPC-valued when they appear in Sacks: Refined Mineral is 100,000 coins and Glossy Gemstone is 200,000 coins. Refined Mineral is generic to mining, so IPT only attributes it when the event/session already identifies the mining MMM; it cannot start a source by itself. Glossy Gemstone is Gemstone-Mining-specific.
 
 Long-running counters use saturating arithmetic so malformed input or an extreme lifetime total cannot wrap into negative values.
 
@@ -73,7 +75,7 @@ A source must be confirmed before a session starts:
 
 IPT parses the `(Last Xs.)` suffix from each sack notification and treats it as that notification's acquisition window. The candidate's first session activity begins at `notification time - X`. If an older/atypical sack message has no `Last Xs.` suffix, IPT falls back to the historical 30-second window for that notification. Candidate-confirmation time remains part of the session; the clock is not restarted at confirmation.
 
-Once active, the source is locked. Rewards from another source build a switch candidate using the same confirmation rules instead of immediately stealing the session.
+Once active, the source is locked. Rewards from another source build a switch candidate using the same confirmation rules instead of immediately stealing the session. Gold Mining candidates are additionally rejected while Hypixel's official location event identifies the current instance as the SkyBlock Hub, preventing unrelated Hub drops such as Diana/Mythological-event Gold from starting that MMM.
 
 Live profit/hour is **sample-and-hold**: it is recalculated only when an eligible sack reward for the active MMM is credited, then remains stable until the next eligible sack update. This matches Hypixel's batched reward telemetry and avoids a fake downward drift between notifications. The `Last Xs.` value is not added on every update; doing that would double-count time already present between notification timestamps.
 
@@ -103,7 +105,7 @@ Diagnostics are event-driven and written through the mod logger to `latest.log`;
 ## HUD and configuration
 
 The HUD uses Fabric's HUD element registry and Minecraft's 26.1 render-state extraction API.
-Its border and tracked MMM name use a dynamic source accent (for example light blue for Diamond Mining and gold for Gold Mining), with matching colors in the configuration preview.
+Its border and tracked MMM name use a dynamic source accent (for example light blue for Diamond Mining and gold for Gold Mining), with matching colors in the configuration preview. Mining sessions also show a compacted-equivalent material row below the normal stats. IPT stores raw-equivalent units internally, so 2,000 Enchanted Diamonds are displayed as 12 Enchanted Diamond Blocks + 80 Enchanted Diamonds rather than leaving 2,000 at the middle tier. Gemstone colors are compacted independently before their tier counts are combined.
 
 The Mod Menu screen uses native Minecraft `Button` widgets created during screen initialization, so normal focus, keyboard navigation and narration behavior are retained. The tracker preview remains draggable.
 
@@ -149,7 +151,7 @@ The project is declared client-only in `fabric.mod.json` and uses Loom split env
 
 Minecraft 26.1 requires Java 25. The build uses the non-obfuscated `net.fabricmc.fabric-loom` plugin and normal Gradle dependency configurations expected by the 26.1+ toolchain.
 
-Critical profit/hour/backdate/counter arithmetic has Fabric Loader JUnit regression tests under `src/test/java`. The GitHub build workflow uses Java 25 and `gradlew build`, so those tests run as part of CI.
+Critical profit/hour/backdate/counter/compaction arithmetic has plain JUnit Jupiter regression tests under `src/test/java`. The GitHub build workflow uses Java 25 and `gradlew build`, so those tests run as part of CI.
 
 ## Build
 
@@ -159,6 +161,7 @@ Requirements used by this project:
 - Java 25
 - Fabric Loader 0.19.3
 - Fabric API 0.155.2+26.1.2
+- Hypixel Mod API 1.0.2+build.1+mc26.1 (required)
 - Mod Menu 18.0.0 (optional runtime integration)
 
 Build with the included Gradle wrapper:
@@ -168,3 +171,7 @@ Build with the included Gradle wrapper:
 ```
 
 The environment used to prepare this source review cannot perform the authoritative Fabric build because it does not have the project's Java 25/Fabric dependency set available locally and cannot fetch the Gradle distribution. A dependency-less Java syntax scan and the pure arithmetic regression harness are still run before packaging; the user's local Gradle build remains the final compile/API check.
+
+## Mining Fiesta HUD counters
+
+- Mining Fiesta bonus drops are shown only after they are actually detected: Refined Mineral appears as its own count for applicable mining sessions, and Glossy Gemstone appears for Gemstone Mining. Zero-value bonus counters do not consume HUD space.

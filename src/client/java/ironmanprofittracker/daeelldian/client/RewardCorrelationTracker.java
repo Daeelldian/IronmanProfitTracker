@@ -53,6 +53,7 @@ final class RewardCorrelationTracker {
         if (stash) consumeStashContext();
 
         Map<ProfitSource, ParsedSacksEvent.SourceReward> filtered = new EnumMap<>(ProfitSource.class);
+        List<ParsedSacksEvent.RewardLine> filteredBonuses = new ArrayList<>();
         int suppressedLines = 0;
 
         for (Map.Entry<ProfitSource, ParsedSacksEvent.SourceReward> entry : event.rewards().entrySet()) {
@@ -76,12 +77,23 @@ final class RewardCorrelationTracker {
             }
         }
 
+        for (ParsedSacksEvent.RewardLine bonusLine : event.miningBonusLines()) {
+            if (consumeMatchingCraft(bonusLine)) {
+                suppressedLines++;
+                ProfitTrackerDebug.trace("Craft correlation suppressed mining bonus "
+                        + bonusLine.itemName() + " x" + bonusLine.amount());
+                continue;
+            }
+            filteredBonuses.add(bonusLine);
+        }
+
         ParsedSacksEvent effective = new ParsedSacksEvent(
                 event.timestampMs(),
                 event.addition(),
                 event.reportedItemCount(),
                 event.accountingWindowMs(),
-                filtered
+                filtered,
+                filteredBonuses
         );
         return new ResolvedEvent(effective, stash ? RewardContext.STASH : RewardContext.NORMAL, suppressedLines);
     }

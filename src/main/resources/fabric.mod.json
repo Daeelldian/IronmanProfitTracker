@@ -8,7 +8,7 @@
     "Daeelldian"
   ],
   "contact": {},
-  "license": "MIT",
+  "license": "CC0-1.0",
   "icon": "assets/ironman-profit-tracker/icon.png",
   "environment": "client",
   "entrypoints": {
@@ -23,7 +23,8 @@
     "fabricloader": ">=0.19.3",
     "minecraft": "~26.1.2",
     "java": ">=25",
-    "fabric-api": "*"
+    "fabric-api": "*",
+    "hypixel-mod-api": ">=1.0.2"
   },
   "suggests": {
     "modmenu": ">=18.0.0"

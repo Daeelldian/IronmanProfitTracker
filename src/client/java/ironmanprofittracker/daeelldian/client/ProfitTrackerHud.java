@@ -4,6 +4,9 @@ import ironmanprofittracker.daeelldian.IronmanProfitTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
+import java.util.List;
+import java.util.Locale;
+
 /** Lightweight HUD renderer. Expensive/formatted values are snapshotted at 4 Hz, not every frame. */
 public final class ProfitTrackerHud {
     private static final int PAD = 5;
@@ -12,6 +15,9 @@ public final class ProfitTrackerHud {
     private static final int VALUE_GAP = 8;
     private static final int VALUE_MIN_X = 105;
     private static final int LINE_HEIGHT = 10;
+    private static final int MATERIAL_ROW_HEIGHT = 18;
+    private static final int MATERIAL_ENTRY_GAP = 5;
+    private static final int MATERIAL_TEXT_ICON_GAP = 2;
     private static final long SNAPSHOT_INTERVAL_MS = 250L;
 
     private static long lastSnapshotMs;
@@ -65,7 +71,11 @@ public final class ProfitTrackerHud {
             if (config.showProfit) line = text(graphics, minecraft, snapshot.profit, "profit", line, layout.valueX);
             if (config.showProfitPerHour) line = text(graphics, minecraft, snapshot.profitPerHour, "profit/h", line, layout.valueX);
             if (config.showHighestProfit) line = text(graphics, minecraft, snapshot.highestProfit, "best session", line, layout.valueX);
-            if (config.showHighestProfitPerHour) text(graphics, minecraft, snapshot.highestProfitPerHour, "best rate", line, layout.valueX);
+            if (config.showHighestProfitPerHour) line = text(graphics, minecraft, snapshot.highestProfitPerHour, "best rate", line, layout.valueX);
+
+            if (!snapshot.materials.isEmpty()) {
+                drawMaterials(graphics, minecraft, snapshot.materials, line * LINE_HEIGHT + 1);
+            }
         } finally {
             graphics.pose().popMatrix();
         }
@@ -84,7 +94,8 @@ public final class ProfitTrackerHud {
                     format(state.getProfit()),
                     format(state.getProfitPerHour()) + "/h",
                     format(state.getHighestProfit()),
-                    format(state.getHighestProfitPerHour()) + "/h"
+                    format(state.getHighestProfitPerHour()) + "/h",
+                    state.getMaterialBreakdown()
             );
             lastSnapshotMs = nowMs;
         }
@@ -96,6 +107,22 @@ public final class ProfitTrackerHud {
         graphics.text(minecraft.font, label, 3, y, 0xFFAAAAAA, false);
         graphics.text(minecraft.font, value, valueX, y, 0xFFFFFFFF, true);
         return line + 1;
+    }
+
+    private static void drawMaterials(
+            GuiGraphicsExtractor graphics,
+            Minecraft minecraft,
+            List<ProfitSource.MaterialDisplayEntry> materials,
+            int y
+    ) {
+        int x = 3;
+        for (ProfitSource.MaterialDisplayEntry entry : materials) {
+            String count = formatItemCount(entry.count());
+            graphics.text(minecraft.font, count, x, y + 4, 0xFFFFFFFF, true);
+            x += minecraft.font.width(count) + MATERIAL_TEXT_ICON_GAP;
+            graphics.item(entry.iconStack(), x, y);
+            x += ICON_SIZE + MATERIAL_ENTRY_GAP;
+        }
     }
 
     private static Layout getLayout(Minecraft minecraft, ProfitTrackerConfig config, ProfitSource source, HudSnapshot snapshot) {
@@ -112,13 +139,29 @@ public final class ProfitTrackerHud {
         if (config.showProfitPerHour) width = Math.max(width, valueX + minecraft.font.width(snapshot.profitPerHour));
         if (config.showHighestProfit) width = Math.max(width, valueX + minecraft.font.width(snapshot.highestProfit));
         if (config.showHighestProfitPerHour) width = Math.max(width, valueX + minecraft.font.width(snapshot.highestProfitPerHour));
+        if (!snapshot.materials.isEmpty()) width = Math.max(width, materialRowWidth(minecraft, snapshot.materials));
 
-        int lines = 2
+        int lines = visibleTextLines(config);
+        int height = lines * LINE_HEIGHT + 2;
+        if (!snapshot.materials.isEmpty()) height += MATERIAL_ROW_HEIGHT;
+        return new Layout(width, height, valueX);
+    }
+
+    private static int materialRowWidth(Minecraft minecraft, List<ProfitSource.MaterialDisplayEntry> materials) {
+        int width = 3;
+        for (ProfitSource.MaterialDisplayEntry entry : materials) {
+            width += minecraft.font.width(formatItemCount(entry.count()))
+                    + MATERIAL_TEXT_ICON_GAP + ICON_SIZE + MATERIAL_ENTRY_GAP;
+        }
+        return Math.max(0, width - MATERIAL_ENTRY_GAP);
+    }
+
+    private static int visibleTextLines(ProfitTrackerConfig config) {
+        return 2
                 + (config.showProfit ? 1 : 0)
                 + (config.showProfitPerHour ? 1 : 0)
                 + (config.showHighestProfit ? 1 : 0)
                 + (config.showHighestProfitPerHour ? 1 : 0);
-        return new Layout(width, lines * LINE_HEIGHT + 2, valueX);
     }
 
     public static int getPreviewWidth(ProfitTrackerConfig config) {
@@ -130,18 +173,14 @@ public final class ProfitTrackerHud {
     }
 
     static int getPreviewRawHeight(ProfitTrackerConfig config) {
-        int lines = 2
-                + (config.showProfit ? 1 : 0)
-                + (config.showProfitPerHour ? 1 : 0)
-                + (config.showHighestProfit ? 1 : 0)
-                + (config.showHighestProfitPerHour ? 1 : 0);
-        return lines * LINE_HEIGHT + 2;
+        ProfitSource source = previewSource();
+        return visibleTextLines(config) * LINE_HEIGHT + 2
+                + (source.hasMaterialBreakdown() ? MATERIAL_ROW_HEIGHT : 0);
     }
 
     static int getPreviewRawWidth(ProfitTrackerConfig config) {
         Minecraft minecraft = Minecraft.getInstance();
-        ProfitSource source = IronmanProfitTrackerClient.STATE.getSource();
-        if (source == null) source = ProfitSource.DIAMOND_MINING;
+        ProfitSource source = previewSource();
 
         int valueX = VALUE_MIN_X;
         int width = Math.max(ICON_SIZE, TEXT_X + minecraft.font.width("Tracking (PAUSED)"));
@@ -150,11 +189,30 @@ public final class ProfitTrackerHud {
         if (config.showProfitPerHour) width = Math.max(width, valueX + minecraft.font.width("888.88M/h"));
         if (config.showHighestProfit) width = Math.max(width, valueX + minecraft.font.width("888.88M"));
         if (config.showHighestProfitPerHour) width = Math.max(width, valueX + minecraft.font.width("888.88M/h"));
+        if (source.hasMaterialBreakdown()) width = Math.max(width, materialRowWidth(minecraft, source.previewMaterials()));
         return width;
+    }
+
+    static void renderPreviewMaterials(GuiGraphicsExtractor graphics, Minecraft minecraft, ProfitSource source, int y) {
+        if (source == null || !source.hasMaterialBreakdown()) return;
+        List<ProfitSource.MaterialDisplayEntry> materials = IronmanProfitTrackerClient.STATE.isSessionActive()
+                && IronmanProfitTrackerClient.STATE.getSource() == source
+                ? IronmanProfitTrackerClient.STATE.getMaterialBreakdown()
+                : source.previewMaterials();
+        drawMaterials(graphics, minecraft, materials, y);
+    }
+
+    private static ProfitSource previewSource() {
+        ProfitSource source = IronmanProfitTrackerClient.STATE.getSource();
+        return source == null ? ProfitSource.DIAMOND_MINING : source;
     }
 
     private static String format(double value) {
         return ProfitTrackerState.formatCoins(value);
+    }
+
+    private static String formatItemCount(long count) {
+        return String.format(Locale.ROOT, "%,d", Math.max(0L, count));
     }
 
     private record Layout(int width, int height, int valueX) {}
@@ -165,6 +223,7 @@ public final class ProfitTrackerHud {
             String profit,
             String profitPerHour,
             String highestProfit,
-            String highestProfitPerHour
+            String highestProfitPerHour,
+            List<ProfitSource.MaterialDisplayEntry> materials
     ) {}
 }
