@@ -72,4 +72,89 @@ final class ProfitTrackerMathTest {
         assertEquals(Long.MAX_VALUE, ProfitTrackerMath.saturatingMultiply(Long.MAX_VALUE, 2L));
         assertEquals(2_280L, ProfitTrackerMath.saturatingMultiply(285L, 8L));
     }
+    @Test
+    void explicitBuybacksAccumulateWithinOneSacksInterval() {
+        BuybackCorrelationLedger ledger = new BuybackCorrelationLedger(120_000L);
+        String item = "enchanted end stone";
+
+        ledger.recordBuyback(item, 64L, 100_000L);
+        ledger.recordBuyback(item, 36L, 100_500L);
+
+        assertEquals(100L, ledger.consumeDirect(item, 300L, 101_000L));
+        ledger.finishSacksInterval();
+        assertEquals(0L, ledger.consumeDirect(item, 200L, 102_000L));
+    }
+
+    @Test
+    void unmatchedBuybackCannotPoisonLaterMiningAfterIntervalCloses() {
+        BuybackCorrelationLedger ledger = new BuybackCorrelationLedger(120_000L);
+        ledger.recordBuyback("diamond", 64L, 100_000L);
+
+        ledger.finishSacksInterval();
+        assertEquals(0L, ledger.consumeDirect("diamond", 100L, 101_000L));
+        assertEquals(64L, ledger.pendingAmount("diamond", 101_000L));
+    }
+
+    @Test
+    void lobbyBoundaryDisablesDirectBuybackButPreservesManualTransferEvidence() {
+        BuybackCorrelationLedger ledger = new BuybackCorrelationLedger(120_000L);
+        ledger.recordBuyback("enchanted end stone", 64L, 100_000L);
+
+        ledger.onConnectionBoundary();
+        assertEquals(0L, ledger.consumeDirect("enchanted end stone", 64L, 101_000L));
+        assertEquals(64L, ledger.acknowledgeManualDeposit("enchanted end stone", 64L, 110_000L));
+        assertEquals(0L, ledger.pendingAmount("enchanted end stone", 110_000L));
+    }
+
+    @Test
+    void manualSackDepositSubtractsOnlyTransferredQuantityFromMixedReward() {
+        ManualSackTransferLedger ledger = new ManualSackTransferLedger(45_000L);
+        ledger.recordDeposit("enchanted end stone", 100L, 100_000L);
+
+        assertEquals(100L, ledger.consume("enchanted end stone", 300L, 101_000L));
+        assertEquals(0L, ledger.consume("enchanted end stone", 200L, 102_000L));
+    }
+
+    @Test
+    void manualSackDepositDoesNotAffectOtherItems() {
+        ManualSackTransferLedger ledger = new ManualSackTransferLedger(45_000L);
+        ledger.recordDeposit("enchanted diamond block", 4L, 100_000L);
+
+        assertEquals(0L, ledger.consume("diamond", 500L, 101_000L));
+        assertEquals(4L, ledger.consume("enchanted diamond block", 4L, 101_000L));
+    }
+
+    @Test
+    void staleManualDepositCannotSuppressMuchLaterMining() {
+        ManualSackTransferLedger ledger = new ManualSackTransferLedger(45_000L);
+        ledger.recordDeposit("diamond", 500L, 100_000L);
+
+        assertEquals(0L, ledger.consume("diamond", 500L, 145_001L));
+    }
+
+    @Test
+    void userReportedMixedBuybackScenarioKeepsRealProfit() {
+        BuybackCorrelationLedger buybacks = new BuybackCorrelationLedger(120_000L);
+        String item = "enchanted end stone";
+        buybacks.recordBuyback(item, 64L, 100_000L);
+        buybacks.recordBuyback(item, 36L, 100_200L);
+
+        long sacksAmount = 300L;
+        long boughtBack = buybacks.consumeDirect(item, sacksAmount, 101_000L);
+        long legitimate = sacksAmount - boughtBack;
+
+        assertEquals(100L, boughtBack);
+        assertEquals(200L, legitimate);
+    }
+
+    @Test
+    void randomChestCleanupDepositProducesZeroEligibleProfitForDepositedPart() {
+        ManualSackTransferLedger transfers = new ManualSackTransferLedger(45_000L);
+        transfers.recordDeposit("enchanted diamond block", 4L, 100_000L);
+
+        long sacksAmount = 4L;
+        long deposited = transfers.consume("enchanted diamond block", sacksAmount, 101_000L);
+        assertEquals(0L, sacksAmount - deposited);
+    }
+
 }

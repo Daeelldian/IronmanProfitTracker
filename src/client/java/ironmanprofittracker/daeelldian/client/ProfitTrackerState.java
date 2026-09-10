@@ -83,16 +83,43 @@ public final class ProfitTrackerState {
         correlationTracker.onSupercraft(itemName, amount, nowMs);
     }
 
+    public void onBuyback(String itemName, long amount, long nowMs) {
+        correlationTracker.onBuyback(itemName, amount, nowMs);
+    }
+
     public void onStashMessage(String text, long nowMs) {
         correlationTracker.onStashMessage(text, nowMs);
     }
 
+    public void observeClientInventory(long nowMs) {
+        correlationTracker.observeClientInventory(nowMs);
+    }
+
     public void onSacksEvent(ParsedSacksEvent event) {
-        if (event == null || !event.addition()) return;
+        if (event == null) return;
+
+        // Sample inventory at the event boundary too. This catches a fast inventory -> Sacks move
+        // even when the slot update and the chat notification land between normal client ticks.
+        correlationTracker.observeClientInventoryForSacksEvent(event);
+        correlationTracker.observeNpcShop(NpcShopContext.isBuybackCapableShopOpen(), event.timestampMs());
+
+        if (!event.addition()) {
+            // Sack removals are never profit and are no longer used as broad future-profit heuristics.
+            correlationTracker.onNonProfitSacksEvent(event.timestampMs());
+            return;
+        }
 
         RewardCorrelationTracker.ResolvedEvent resolved = correlationTracker.resolve(event);
-        if (resolved.suppressedLines() > 0) {
-            ProfitTrackerDebug.info("Suppressed " + resolved.suppressedLines() + " crafted sack reward line(s).");
+        if (resolved.suppressedCraftLines() > 0) {
+            ProfitTrackerDebug.info("Suppressed " + resolved.suppressedCraftLines() + " crafted sack reward line(s).");
+        }
+        if (resolved.suppressedManualTransferItems() > 0L) {
+            ProfitTrackerDebug.info("Suppressed " + resolved.suppressedManualTransferItems()
+                    + " manually deposited sack item(s); not counted as MMM profit.");
+        }
+        if (resolved.suppressedExplicitBuybackItems() > 0L) {
+            ProfitTrackerDebug.info("Suppressed " + resolved.suppressedExplicitBuybackItems()
+                    + " sack item(s) matched to an explicit NPC buyback message.");
         }
 
         ParsedSacksEvent effectiveEvent = resolved.event();
@@ -373,6 +400,7 @@ public final class ProfitTrackerState {
 
     public void tick(long nowMs) {
         flushPendingChatMessages();
+        correlationTracker.observeNpcShop(NpcShopContext.isBuybackCapableShopOpen(), nowMs);
         correlationTracker.tick(nowMs);
 
         if (candidate != null && nowMs - candidate.lastObservedAtMs > CANDIDATE_WINDOW_MS) {

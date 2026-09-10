@@ -24,6 +24,9 @@ public final class SacksMessageParser {
     private static final Pattern SUPERCRAFT = Pattern.compile(
             "(?i)^You\\s+Supercrafted\\s+(.+?)\\s+x([0-9][0-9,]*)!\\s*$"
     );
+    private static final Pattern BUYBACK = Pattern.compile(
+            "(?i)^You\\s+bought\\s+back\\s+(.+?)\\s+x([0-9][0-9,]*)\\s+for\\s+[0-9][0-9,]*\\s+Coins?!\\s*$"
+    );
 
     private SacksMessageParser() {}
 
@@ -33,6 +36,18 @@ public final class SacksMessageParser {
 
         // Most GAME messages are unrelated. Route by cheap prefixes before allocating regex matchers
         // or reading the monotonic clock.
+        if (text.startsWith("You bought back ")) {
+            Matcher buyback = BUYBACK.matcher(text);
+            if (buyback.matches()) {
+                state.onBuyback(
+                        buyback.group(1),
+                        parseNumber(buyback.group(2)),
+                        ProfitTrackerClock.nowMs()
+                );
+            }
+            return;
+        }
+
         if (text.startsWith("You Supercrafted ")) {
             Matcher supercraft = SUPERCRAFT.matcher(text);
             if (supercraft.matches()) {
@@ -61,11 +76,6 @@ public final class SacksMessageParser {
                 ? 0L
                 : ProfitTrackerMath.saturatingMultiply(parseNumber(sacks.group(3)), 1_000L);
         long accountingWindowMs = reportedWindowMs > 0L ? reportedWindowMs : FALLBACK_SACK_WINDOW_MS;
-        if (!addition) {
-            ProfitTrackerDebug.trace("Ignoring sack removal: " + text);
-            return;
-        }
-
         try {
             Set<String> uniqueHoverTexts = collectHoverTexts(message);
             Map<ProfitSource, LinkedHashMap<String, ParsedSacksEvent.RewardLine>> parsedBySource = new EnumMap<>(ProfitSource.class);
@@ -133,7 +143,8 @@ public final class SacksMessageParser {
             if (reportedItemCount > 0 && totalParsedItems > reportedItemCount) {
                 ProfitTrackerDebug.error(
                         "sack reward sanity check",
-                        "parsed " + totalParsedItems + " tracked items from a +" + reportedItemCount
+                        "parsed " + totalParsedItems + " tracked items from a "
+                                + (addition ? "+" : "-") + reportedItemCount
                                 + " sack event; entire tracked reward ignored"
                 );
                 rewards.clear();
@@ -149,7 +160,7 @@ public final class SacksMessageParser {
             );
             state.onSacksEvent(new ParsedSacksEvent(
                     nowMs,
-                    true,
+                    addition,
                     reportedItemCount,
                     accountingWindowMs,
                     rewards,

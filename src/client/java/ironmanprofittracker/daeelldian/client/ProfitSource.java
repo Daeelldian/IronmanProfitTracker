@@ -80,9 +80,12 @@ public enum ProfitSource {
     HELIX_TREE("helix_tree", "Helix Tree", Items.OAK_LOG, 0xFF4FD7C8, false, tiers(),
             reward("helix log", 7L), reward("enchanted helix log", 1_120L));
 
+    private static final Pattern ITEM_NAME_SEPARATORS = Pattern.compile("[^a-z0-9]+");
+
     private final String id;
     private final String displayName;
-    private final ItemStack iconStack;
+    private final Item iconItem;
+    private ItemStack iconStack;
     private final int hudAccentColor;
     private final boolean mining;
     private final List<MaterialTier> materialTiers;
@@ -99,7 +102,7 @@ public enum ProfitSource {
     ) {
         this.id = id;
         this.displayName = displayName;
-        this.iconStack = new ItemStack(icon);
+        this.iconItem = icon;
         this.hudAccentColor = hudAccentColor;
         this.mining = mining;
         this.materialTiers = List.copyOf(List.of(materialTiers));
@@ -137,17 +140,31 @@ public enum ProfitSource {
     }
 
     private static MaterialTier tier(String displayName, Item item, boolean glint, long baseUnitsPerItem) {
-        ItemStack stack = new ItemStack(item);
-        if (glint) stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
-        return new MaterialTier(displayName, stack, baseUnitsPerItem);
+        return new MaterialTier(displayName, item, glint, baseUnitsPerItem);
     }
 
     public String getId() { return id; }
     public String getDisplayName() { return displayName; }
-    public ItemStack getIconStack() { return iconStack; }
+    public ItemStack getIconStack() {
+        if (iconStack == null) iconStack = new ItemStack(iconItem);
+        return iconStack;
+    }
     public int getHudAccentColor() { return hudAccentColor; }
     public boolean isMining() { return mining; }
     public boolean hasMaterialBreakdown() { return mining && !materialTiers.isEmpty(); }
+
+    /** Returns the canonical normalized key for an IPT-tracked item display name, or null. */
+    static String canonicalTrackedItemKey(String displayName) {
+        String normalized = normalizeItemName(displayName);
+        if (normalized.isBlank()) return null;
+        return TrackedItemKeyIndex.KEYS.get(normalized);
+    }
+
+    static String normalizeItemName(String value) {
+        if (value == null) return "";
+        String normalized = value.toLowerCase(Locale.ROOT).replace('×', 'x');
+        return ITEM_NAME_SEPARATORS.matcher(normalized).replaceAll(" ").trim();
+    }
 
     /** Parses every configured reward line present in one Hypixel hover payload. */
     public List<ParsedReward> parseRewards(String hoverText) {
@@ -251,6 +268,23 @@ public enum ProfitSource {
         return List.copyOf(out);
     }
 
+
+    private static final class TrackedItemKeyIndex {
+        private static final Map<String, String> KEYS = build();
+
+        private static Map<String, String> build() {
+            Map<String, String> keys = new LinkedHashMap<>();
+            for (ProfitSource source : ProfitSource.values()) {
+                for (Reward reward : source.rewards) keys.put(reward.name, reward.name);
+            }
+            for (MiningBonus bonus : MiningBonus.values()) {
+                String key = normalizeItemName(bonus.getDisplayName());
+                keys.put(key, key);
+            }
+            return Map.copyOf(keys);
+        }
+    }
+
     public record ParsedReward(
             long amount,
             long npcSellPrice,
@@ -264,7 +298,31 @@ public enum ProfitSource {
 
     public record MaterialDisplayEntry(String displayName, ItemStack iconStack, long count) {}
 
-    private record MaterialTier(String displayName, ItemStack iconStack, long baseUnitsPerItem) {}
+    private static final class MaterialTier {
+        private final String displayName;
+        private final Item item;
+        private final boolean glint;
+        private final long baseUnitsPerItem;
+        private ItemStack iconStack;
+
+        private MaterialTier(String displayName, Item item, boolean glint, long baseUnitsPerItem) {
+            this.displayName = displayName;
+            this.item = item;
+            this.glint = glint;
+            this.baseUnitsPerItem = baseUnitsPerItem;
+        }
+
+        private String displayName() { return displayName; }
+        private long baseUnitsPerItem() { return baseUnitsPerItem; }
+
+        private ItemStack iconStack() {
+            if (iconStack == null) {
+                iconStack = new ItemStack(item);
+                if (glint) iconStack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+            }
+            return iconStack;
+        }
+    }
 
     private static final class Reward {
         private final String name;

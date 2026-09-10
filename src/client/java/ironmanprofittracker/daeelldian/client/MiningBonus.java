@@ -20,7 +20,8 @@ public enum MiningBonus {
     private final String normalizedName;
     private final long npcSellPrice;
     private final ProfitSource specificSource;
-    private final ItemStack iconStack;
+    private final Item iconItem;
+    private ItemStack iconStack;
     private final Pattern namePattern;
     private final Pattern amountAfterPattern;
     private final Pattern amountBeforePattern;
@@ -30,8 +31,7 @@ public enum MiningBonus {
         this.normalizedName = displayName.toLowerCase(Locale.ROOT);
         this.npcSellPrice = npcSellPrice;
         this.specificSource = specificSource;
-        this.iconStack = new ItemStack(iconItem);
-        this.iconStack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        this.iconItem = iconItem;
         String quoted = Pattern.quote(normalizedName);
         this.namePattern = Pattern.compile("(?i)(?<![a-z0-9])" + quoted + "(?![a-z0-9])");
         this.amountAfterPattern = Pattern.compile(
@@ -45,7 +45,13 @@ public enum MiningBonus {
     public String getDisplayName() { return displayName; }
     public long getNpcSellPrice() { return npcSellPrice; }
     public ProfitSource getSpecificSource() { return specificSource; }
-    public ItemStack getIconStack() { return iconStack.copy(); }
+    public ItemStack getIconStack() {
+        if (iconStack == null) {
+            iconStack = new ItemStack(iconItem);
+            iconStack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        }
+        return iconStack;
+    }
 
     public boolean appliesTo(ProfitSource source) {
         return source != null && source.isMining() && (specificSource == null || specificSource == source);

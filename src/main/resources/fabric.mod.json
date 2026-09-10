@@ -8,7 +8,7 @@
     "Daeelldian"
   ],
   "contact": {},
-  "license": "CC0-1.0",
+  "license": "MIT",
   "icon": "assets/ironman-profit-tracker/icon.png",
   "environment": "client",
   "entrypoints": {

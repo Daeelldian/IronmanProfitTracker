@@ -26,10 +26,15 @@ public final class IronmanProfitTrackerClient implements ClientModInitializer {
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            long nowMs = ProfitTrackerClock.nowMs();
+            // Lightweight 20 Hz inventory sampling catches manual deposits into Sacks before the
+            // corresponding chat batch reaches the session engine.
+            STATE.observeClientInventory(nowMs);
+
             maintenanceTicks++;
             if (maintenanceTicks < MAINTENANCE_INTERVAL_TICKS) return;
             maintenanceTicks = 0;
-            STATE.tick(ProfitTrackerClock.nowMs());
+            STATE.tick(nowMs);
         });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {

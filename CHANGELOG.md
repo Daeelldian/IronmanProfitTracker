@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.4.6 - transfer-first Sacks accounting
+
+- Replace the broad v33-v35 Sacks-removal/NPC heuristics with explicit quantity accounting.
+- Accumulate `You bought back <item> x<amount> ...` messages within the current Sacks reporting interval and subtract only the exact matching quantity from the next immediate NPC-context Sacks batch.
+- Close direct buyback eligibility after the next Sacks notification so an unmatched buyback cannot suppress later normal mining.
+- Preserve short-lived buyback history across lobby switches only for manual-transfer acknowledgement; it cannot directly suppress fresh rewards after the boundary.
+- Detect manual inventory -> Sacks deposits by sampling tracked player-inventory counts while a Sacks management screen is active. Cursor-held items are included so ordinary click/drag movement is not misclassified as a deposit.
+- Subtract manual deposits item-for-item before candidate/session logic, including mixed batches such as 300 total - 100 deposited = 200 eligible earnings.
+- Keep manual transfer evidence for up to 45 seconds and buyback history for up to two minutes, both bounded and exact-item-only.
+- Stop using old `[Sacks] -X` history as a generic future-profit suppression source, eliminating the false-negative cases found in v35 simulation.
+- Add regressions for accumulated buybacks, lobby-boundary behavior, mixed legitimate+transfer batches, unrelated items, stale transfers, and chest-cleanup deposits.
+- Preserve the user-provided IPT icon.
+
+## 0.4.5 - aggregated NPC buyback remainder fix
+
+- Fixed a buyback case where the explicit `You bought back ... xN` quantity was suppressed, but the remainder of the same aggregated Sacks reward line could still be credited as mining profit.
+- An explicit buyback match now acts as transaction context for the remainder of that same item line. Extra suppression is still capped by concrete recent Sacks-removal history, avoiding a blanket ignore of unrelated mining rewards.
+- Added a regression for the observed Enchanted End Stone pattern: recent removal x640, explicit buyback x64, aggregated return x640 -> 0 mining profit.
+
+## 0.4.4 - explicit NPC buyback correlation
+
+- Parse Hypixel's explicit `You bought back <item> x<amount> for <coins> Coins!` chat message as authoritative buyback evidence.
+- Correlate the exact normalized item and quantity against Sacks additions before they reach candidate/session accounting.
+- Support partial mixed lines: if a buyback says x64 and the matching Sacks line contains x100, only the 64 explicitly bought back are removed unless another concrete sack-removal correlation accounts for more.
+- Make buyback correlation two-way so either message order is safe: a late buyback chat message can confirm a Sacks addition already suppressed by the v33 NPC/removal fallback without arming a stale suppression for the next real mining reward.
+- Keep v33's NPC Buyback-screen and tracked sack-removal logic as fallback protection for unusual ordering or hidden/modified chat.
+- Expire unmatched explicit buyback correlations after 10 seconds to avoid suppressing unrelated later mining.
+- Add pure regression tests for message-before-Sacks, Sacks-before-message, partial matching, and expiry.
+- Preserve the user-provided IPT icon and all 0.4.3 gameplay/HUD behavior.
+
+## 0.4.3 - NPC buyback / sack-return protection
+
+- Fixed NPC buyback/redeposit additions being mistaken for newly-mined profit and starting sessions with extreme profit/hour values.
+- Parse tracked `[Sacks] -X items` removals for correlation only; removals are never credited as profit or activity.
+- Add a conservative sack-transfer ledger: an exact quick removal/redeposit reversal is suppressed even outside an NPC screen.
+- Detect Buyback-capable Hypixel NPC shop screens and suppress transactional sack additions while the tracker is inactive or paused.
+- In NPC context, support partial buybacks by consuming only the quantity that can be correlated to prior removals; during an actively-running session IPT remains conservative rather than blanket-dropping delayed mining batches.
+- Keep a five-second NPC-shop grace window so the server response can arrive just after the merchant screen closes.
+- Add regression tests for exact redeposits, partial NPC buybacks, and stale-removal false-positive protection.
+- Restore the user-provided IPT icon in the packaged resources and set the project metadata/license file to MIT as previously requested.
+
+## 0.4.2 - Startup crash fix
+
+- Fixed a Minecraft 26.1.2 startup crash (`Components not bound yet`) caused by constructing mining bonus `ItemStack`s during enum initialization.
+- Removed all eager `ItemStack` construction from `MiningBonus` and `ProfitSource`; HUD icon stacks are now created lazily only when the HUD/config UI actually needs them after Minecraft registries/components are ready.
+- No accounting, session, parser, or HUD-layout behavior changed.
+
 ## 0.4.1 - v31
 
 ### Conditional Mining Fiesta HUD counters

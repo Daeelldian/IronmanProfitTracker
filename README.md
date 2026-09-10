@@ -28,7 +28,7 @@ Fabric GAME message
     -> persistent records / HUD
 ```
 
-`ProfitSource` owns source definitions, NPC prices, and mined-material compaction metadata. `SacksMessageParser` only turns Hypixel messages and hover text into structured rewards. `RewardCorrelationTracker` removes known non-MMM causes such as matching Supercraft output and marks explicit stash-to-sacks transfers. `ProfitTrackerState` owns session/candidate behavior. `HypixelLocationTracker` uses the official Hypixel Mod API location event for island-specific guards such as suppressing false Gold Mining candidates on the SkyBlock Hub. Rendering and persistence are separate from parsing and accounting.
+`ProfitSource` owns source definitions, NPC prices, and mined-material compaction metadata. `SacksMessageParser` only turns Hypixel messages and hover text into structured rewards. `RewardCorrelationTracker` removes known non-MMM causes such as matching Supercraft output, explicit NPC buybacks, manual inventory-to-Sacks deposits, and marks explicit stash-to-sacks transfers. `ProfitTrackerState` owns session/candidate behavior. `HypixelLocationTracker` uses the official Hypixel Mod API location event for island-specific guards such as suppressing false Gold Mining candidates on the SkyBlock Hub. Rendering and persistence are separate from parsing and accounting.
 
 ## Profit accounting and compaction
 
@@ -45,6 +45,41 @@ The parser deduplicates repeated semantic hover payloads and repeated parsed rew
 Mining Fiesta bonus drops are also NPC-valued when they appear in Sacks: Refined Mineral is 100,000 coins and Glossy Gemstone is 200,000 coins. Refined Mineral is generic to mining, so IPT only attributes it when the event/session already identifies the mining MMM; it cannot start a source by itself. Glossy Gemstone is Gemstone-Mining-specific.
 
 Long-running counters use saturating arithmetic so malformed input or an extreme lifetime total cannot wrap into negative values.
+
+## Buyback and manual Sacks-transfer protection
+
+IPT no longer treats every positive Sacks line as newly-earned MMM profit. Before a reward can reach
+session detection/accounting, known inventory transfers are subtracted from the reported quantity.
+
+For Hypixel NPC buybacks, the explicit server message is the strongest direct signal:
+
+```text
+You bought back Enchanted End Stone x64 for 20,480 Coins!
+```
+
+Buyback quantities accumulate between Sacks notifications. During the immediate NPC transaction
+window, the next Sacks batch subtracts only the exact matching item quantity. Example: buy back x64
+and x36, then receive a Sacks line containing x300 of that same item -> IPT suppresses x100 and keeps
+x200 as eligible earned material. The next Sacks notification closes that direct interval so an
+unmatched buyback cannot poison later normal mining.
+
+Manual deposits are detected independently by sampling the player's tracked inventory while a
+Sacks management screen is open. If four Enchanted Diamond Blocks disappear from the player
+inventory into Sacks, IPT records x4 as transfer quantity. A later Sacks batch containing those four
+items subtracts them before candidate/session logic. Mixed batches are handled proportionally: a
+Sacks line with x300 where x100 was manually deposited keeps only x200 as eligible MMM earnings.
+The GUI cursor stack is included in the snapshot, so merely picking an item up with the mouse is not
+mistaken for a deposit.
+
+Short-lived buyback history survives a Hypixel lobby switch, but direct buyback matching does not.
+This specifically protects the sequence "buy back item -> switch lobby -> manually put it in Sacks"
+without allowing the old buyback to suppress fresh mining in the new lobby. Manual-deposit evidence
+is connection-local and expires after 45 seconds; historical buyback evidence expires after two
+minutes.
+
+Tracked `[Sacks] -X` removals are no longer used as a broad suppression heuristic. This avoids the
+v33-v35 failure mode where an unrelated old withdrawal could accidentally erase legitimate mining
+profit just because the item and quantity happened to match.
 
 ## Supercraft protection
 
@@ -87,7 +122,7 @@ A lobby/server boundary ends the session. IPT handles both a normal Fabric disco
 
 IPT does not poll chat or parse sacks every tick. Message parsing runs only when Fabric delivers a non-overlay GAME message, and unrelated messages are discarded by cheap prefix checks before regex/correlation work.
 
-Lightweight housekeeping runs every 5 client ticks (about 4 Hz at normal 20 TPS) for candidate expiry, craft/stash expiry, pause detection and queued chat delivery. The HUD still renders normally every frame, but formatted/accounting values are snapshotted at 4 Hz and HUD rendering never emits TRACE output.
+A lightweight tracked-inventory snapshot runs once per client tick while the client is active so manual Sacks deposits can be correlated before the chat batch is accounted. It scans only the player inventory/cursor and records deltas only in Sacks UI context. The existing housekeeping still runs every 5 client ticks (about 4 Hz at normal 20 TPS) for candidate expiry, correlation expiry, pause detection and queued chat delivery. The HUD still renders normally every frame, but formatted/accounting values are snapshotted at 4 Hz and HUD rendering never emits TRACE output.
 
 If HUD rendering itself throws a runtime exception, IPT logs it once and disables its HUD for the remainder of that game session instead of repeatedly throwing every frame.
 
