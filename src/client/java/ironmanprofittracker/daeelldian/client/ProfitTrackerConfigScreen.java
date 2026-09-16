@@ -172,7 +172,7 @@ public final class ProfitTrackerConfigScreen extends Screen {
     @Override
     public void onClose() {
         config.save();
-        if (minecraft != null) minecraft.setScreen(parent);
+        if (minecraft != null) minecraft.gui.setScreen(parent);
     }
 
     private void saveAndRefresh() {

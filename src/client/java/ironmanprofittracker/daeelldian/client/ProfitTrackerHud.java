@@ -46,7 +46,7 @@ public final class ProfitTrackerHud {
 
         Minecraft minecraft = Minecraft.getInstance();
         ProfitSource source = state.getSource();
-        if (minecraft.player == null || minecraft.options.hideGui || source == null) return;
+        if (minecraft.player == null || minecraft.gui.hud.isHidden() || source == null) return;
 
         HudSnapshot snapshot = snapshot(source, state);
         Layout layout = getLayout(minecraft, config, source, snapshot);

@@ -11,7 +11,7 @@ final class SacksUiContext {
 
     static boolean isSacksScreenOpen() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (!(minecraft.screen instanceof AbstractContainerScreen<?> screen)) return false;
+        if (!(minecraft.gui.screen() instanceof AbstractContainerScreen<?> screen)) return false;
         String title = screen.getTitle().getString();
         if (title == null || title.isBlank()) return false;
         return title.toLowerCase(Locale.ROOT).contains("sack");

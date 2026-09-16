@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.7 - Minecraft 26.2 port
+
+- Update the target game version from Minecraft 26.1.2 to 26.2.
+- Update Fabric Loader to 0.19.5, Fabric API to 0.160.0+26.2, and optional Mod Menu integration to 20.0.0.
+- Follow Minecraft 26.2's GUI/HUD reorganization: current-screen access now uses `minecraft.gui.screen()`, screen changes use `minecraft.gui.setScreen(...)`, F1/HUD visibility uses `minecraft.gui.hud.isHidden()`, and client system chat output uses `minecraft.gui.hud.getChat()`.
+- Keep the v32 startup-crash fix intact: no tracked icon `ItemStack` is created from enum/static initialization.
+- Preserve all 0.4.6 buyback/manual-Sacks-transfer accounting behavior and the user-provided IPT icon.
+
 ## 0.4.6 - transfer-first Sacks accounting
 
 - Replace the broad v33-v35 Sacks-removal/NPC heuristics with explicit quantity accounting.

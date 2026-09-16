@@ -505,7 +505,7 @@ public final class ProfitTrackerState {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.gui == null || minecraft.player == null) return;
         while (!pendingChatMessages.isEmpty()) {
-            minecraft.gui.getChat().addClientSystemMessage(pendingChatMessages.removeFirst());
+            minecraft.gui.hud.getChat().addClientSystemMessage(pendingChatMessages.removeFirst());
         }
     }
 
@@ -554,7 +554,7 @@ public final class ProfitTrackerState {
     private static void send(Component component) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.gui != null && minecraft.player != null) {
-            minecraft.gui.getChat().addClientSystemMessage(component);
+            minecraft.gui.hud.getChat().addClientSystemMessage(component);
         }
     }
 

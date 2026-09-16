@@ -318,7 +318,7 @@ final class RewardCorrelationTracker {
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             addTrackedStack(counts, inventory.getItem(slot));
         }
-        if (minecraft.screen instanceof AbstractContainerScreen<?> screen) {
+        if (minecraft.gui.screen() instanceof AbstractContainerScreen<?> screen) {
             addTrackedStack(counts, screen.getMenu().getCarried());
         }
         return counts;
