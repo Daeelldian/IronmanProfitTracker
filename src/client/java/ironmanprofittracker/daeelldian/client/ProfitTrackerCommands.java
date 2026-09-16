@@ -128,7 +128,7 @@ public final class ProfitTrackerCommands {
     private static void send(Component component) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.gui != null && minecraft.player != null) {
-            minecraft.gui.getChat().addClientSystemMessage(component);
+            minecraft.gui.hud.getChat().addClientSystemMessage(component);
         }
     }
 

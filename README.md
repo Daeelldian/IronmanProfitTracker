@@ -1,6 +1,6 @@
 # Ironman Profit Tracker (IPT)
 
-Ironman Profit Tracker is a client-only Fabric mod for Minecraft 26.1.2 / Hypixel SkyBlock. It tracks selected money-making methods using **NPC sell value only**. Bazaar pricing is never used.
+Ironman Profit Tracker is a client-only Fabric mod for Minecraft 26.2 / Hypixel SkyBlock. It tracks selected money-making methods using **NPC sell value only**. Bazaar pricing is never used.
 
 ## Tracked sources
 
@@ -184,7 +184,7 @@ Config and record writes use a temporary file plus atomic replacement where supp
 
 The project is declared client-only in `fabric.mod.json` and uses Loom split environment source sets. Minecraft-independent utilities live in `src/main`; Minecraft client code lives in `src/client`.
 
-Minecraft 26.1 requires Java 25. The build uses the non-obfuscated `net.fabricmc.fabric-loom` plugin and normal Gradle dependency configurations expected by the 26.1+ toolchain.
+Minecraft 26.2 requires Java 25. The build uses the non-obfuscated `net.fabricmc.fabric-loom` plugin and normal Gradle dependency configurations expected by the 26.x toolchain.
 
 Critical profit/hour/backdate/counter/compaction arithmetic has plain JUnit Jupiter regression tests under `src/test/java`. The GitHub build workflow uses Java 25 and `gradlew build`, so those tests run as part of CI.
 
@@ -192,12 +192,12 @@ Critical profit/hour/backdate/counter/compaction arithmetic has plain JUnit Jupi
 
 Requirements used by this project:
 
-- Minecraft 26.1.2
+- Minecraft 26.2
 - Java 25
-- Fabric Loader 0.19.3
-- Fabric API 0.155.2+26.1.2
-- Hypixel Mod API 1.0.2+build.1+mc26.1 (required)
-- Mod Menu 18.0.0 (optional runtime integration)
+- Fabric Loader 0.19.5
+- Fabric API 0.160.0+26.2
+- Hypixel Mod API 1.0.2 (required)
+- Mod Menu 20.0.0 (optional runtime integration)
 
 Build with the included Gradle wrapper:
 
@@ -205,7 +205,7 @@ Build with the included Gradle wrapper:
 ./gradlew build
 ```
 
-The environment used to prepare this source review cannot perform the authoritative Fabric build because it does not have the project's Java 25/Fabric dependency set available locally and cannot fetch the Gradle distribution. A dependency-less Java syntax scan and the pure arithmetic regression harness are still run before packaging; the user's local Gradle build remains the final compile/API check.
+The environment used to prepare this source review cannot perform the authoritative Fabric build because it does not have the project's Java 25/Fabric dependency set available locally and cannot fetch the Gradle distribution. The Minecraft-independent correlation/math helpers are still compiled locally before packaging; a Java 25 Gradle build remains the final compile/API check.
 
 ## Mining Fiesta HUD counters
 

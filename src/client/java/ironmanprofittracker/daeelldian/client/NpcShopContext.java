@@ -15,7 +15,7 @@ final class NpcShopContext {
 
     static boolean isBuybackCapableShopOpen() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (!(minecraft.screen instanceof AbstractContainerScreen<?> screen)) return false;
+        if (!(minecraft.gui.screen() instanceof AbstractContainerScreen<?> screen)) return false;
 
         if (containsBuyback(screen.getTitle().getString())) return true;
 
